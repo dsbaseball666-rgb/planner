@@ -62,16 +62,28 @@ h2{font-size:15px;color:var(--mute);font-weight:600;margin:22px 4px 8px}
 .calhead{display:flex;align-items:center;justify-content:space-between;margin:10px 0}
 .calhead b{font-size:18px}
 .iconbtn{background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:12px;width:40px;height:40px;font-size:18px;cursor:pointer}
-.grid7{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.grid7{display:grid;grid-template-columns:repeat(7,1fr)}
 .dow{text-align:center;font-size:12px;color:var(--mute);padding:4px 0}
-.day{aspect-ratio:1/1;border-radius:12px;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;font-variant-numeric:tabular-nums;position:relative;border:1px solid transparent;background:none;color:var(--ink);font-size:15px;padding:0}
-.day.other{color:var(--line)}
-.day.today{border-color:var(--accent);color:var(--accent);font-weight:700}
-.day.sel{background:var(--accent);color:#fff;border-color:var(--accent)}
-.dots{display:flex;gap:3px;height:5px;margin-top:3px}
-.dots i{width:5px;height:5px;border-radius:50%;background:var(--accent)}
-.dots i.m{background:var(--blue)}
-.day.sel .dots i{background:#fff}
+.week{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:28px repeat(3,18px) 15px;border-top:1px solid var(--line)}
+.day{grid-row:1/-1;border:none;background:none;color:var(--ink);padding:3px 0 0;cursor:pointer;display:flex;justify-content:center;align-items:flex-start;border-radius:8px;position:relative;font:inherit}
+.day .n{width:24px;height:24px;line-height:24px;border-radius:50%;font-size:14px;font-variant-numeric:tabular-nums;text-align:center}
+.day.other .n{color:var(--mute);opacity:.45}
+.day.today .n{color:var(--accent);font-weight:800;box-shadow:inset 0 0 0 1.5px var(--accent)}
+.day.sel{background:var(--accent-soft)}
+.day.sel .n{background:var(--accent);color:#fff;font-weight:700;box-shadow:none}
+.day .mdot{position:absolute;top:5px;right:4px;width:5px;height:5px;border-radius:50%;background:var(--blue)}
+.evbar{pointer-events:none;margin:1px 1px;border-radius:5px;color:#fff;font-size:11px;line-height:16px;height:16px;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:clip;z-index:1;font-weight:600}
+.evbar.cl{border-top-left-radius:0;border-bottom-left-radius:0;margin-left:0}
+.evbar.cr{border-top-right-radius:0;border-bottom-right-radius:0;margin-right:0}
+.evbar.done{opacity:.4;text-decoration:line-through}
+.more{pointer-events:none;grid-row:5;font-size:10px;color:var(--mute);text-align:center;line-height:15px;z-index:1}
+.cdot{width:10px;height:10px;border-radius:50%;flex:none;display:inline-block}
+.row .stripe{width:5px;align-self:stretch;border-radius:4px;flex:none;margin:-2px 0}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--mute);margin-top:10px}
+.legend span{display:inline-flex;align-items:center;gap:4px}
+.swatches{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.swatches button{border:2px solid transparent;background:var(--card);border-radius:12px;padding:8px 4px;display:flex;align-items:center;justify-content:center;gap:6px;font-size:13px;color:var(--ink);cursor:pointer;box-shadow:inset 0 0 0 1px var(--line)}
+.swatches button.on{border-color:var(--ink);box-shadow:none;font-weight:700}
 /* money */
 .sum3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .sum3 .card{padding:12px}
@@ -247,12 +259,38 @@ const S = {
 function header(title, sub){
   return `<div class="top"><div><h1>${title}</h1><div class="sub">${sub||''}</div></div><span class="sync" id="sync">${esc(Store.syncText)}</span></div>`;
 }
-const sortEvents = arr => arr.sort((a,b)=> (a.date+(a.time||'99:99')).localeCompare(b.date+(b.time||'99:99')));
-function eventRow(e, showDate){
+const sortEvents = arr => arr.sort((a,b)=> (a.date+(a.time||'00:00')).localeCompare(b.date+(b.time||'00:00')) || (evEnd(b).localeCompare(evEnd(a))));
+/* 行程顏色 */
+const COLORS = [
+  {k:'red',    n:'重要', c:'#d64545'},
+  {k:'orange', n:'工作', c:'#e07b39'},
+  {k:'yellow', n:'提醒', c:'#c99a12'},
+  {k:'green',  n:'私人', c:'#3f9a5c'},
+  {k:'teal',   n:'健康', c:'#2a9d9a'},
+  {k:'blue',   n:'學校', c:'#3b6fd9'},
+  {k:'purple', n:'家庭', c:'#8a5cd6'},
+  {k:'gray',   n:'其他', c:'#7d8590'}
+];
+const colorOf = e => (COLORS.find(x => x.k === e.color) || COLORS[1]);
+/* 多天行程 */
+const evEnd = e => (e.end && e.end > e.date) ? e.end : e.date;
+const covers = (e, s) => e.date <= s && s <= evEnd(e);
+const dayDiff = (a, b) => Math.round((parseYmd(b) - parseYmd(a)) / 864e5);
+const evDays = e => dayDiff(e.date, evEnd(e)) + 1;
+function evWhen(e, onDay){
+  const n = evDays(e);
+  if (n === 1) return (onDay ? '' : fmtDate(e.date) + ' ') + (e.time ? esc(e.time) : '整天');
+  if (onDay) return `第 ${dayDiff(e.date, onDay)+1}／${n} 天` + (onDay === e.date && e.time ? ' · ' + esc(e.time) + ' 開始' : '');
+  return `${fmtDate(e.date)} → ${fmtDate(evEnd(e))} · ${n} 天`;
+}
+function eventRow(e, onDay){
+  const col = colorOf(e);
   return `<div class="row ${e.done?'done':''}" data-edit-event="${e.id}">
+    <span class="stripe" style="background:${col.c}"></span>
     <button class="chk ${e.done?'on':''}" data-toggle="${e.id}" aria-label="完成">${e.done?'✓':''}</button>
     <div class="grow"><div class="t">${esc(e.title)}</div>
-    <div class="d">${showDate?fmtDate(e.date)+' ':''}${e.time?esc(e.time):'整天'}${e.memo?' · '+esc(e.memo):''}</div></div></div>`;
+    <div class="d">${evWhen(e, onDay)}${e.memo?' · '+esc(e.memo):''}</div></div>
+    <span class="pill" style="background:${col.c}22;color:${col.c}">${col.n}</span></div>`;
 }
 function txRow(t){
   return `<div class="row" data-edit-tx="${t.id}">
@@ -274,7 +312,7 @@ function monthTx(monthDate){
 
 function viewToday(){
   const now = new Date(), t = todayStr();
-  const evs = sortEvents(Store.all('event').filter(e => e.date === t));
+  const evs = sortEvents(Store.all('event').filter(e => covers(e, t)));
   const upcoming = sortEvents(Store.all('event').filter(e => e.date > t && !e.done)).slice(0,5);
   const mtx = monthTx(new Date(now.getFullYear(), now.getMonth(), 1));
   const out = mtx.filter(x=>x.type==='out').reduce((s,x)=>s+x.amount,0);
@@ -286,12 +324,12 @@ function viewToday(){
   <div class="widgets">
     <div class="w date" data-go="calendar"><div class="lab">${now.getMonth()+1} 月 · 星期${WD[now.getDay()]}</div><div class="num">${now.getDate()}</div><div class="small">${left ? `還有 ${left} 件事` : (evs.length ? '今天都完成了 🎉' : '今天沒有行程')}</div></div>
     <div class="w" data-go="money"><div class="lab">今日支出</div><div class="num">${money(todayOut)}</div><div class="small">本月支出 ${money(out)}</div></div>
-    <div class="w big" data-go="calendar"><div class="lab">今日行程</div><div class="mini">${evs.length ? evs.slice(0,4).map(e=>`<div style="${e.done?'text-decoration:line-through;opacity:.5':''}"><b>${e.time||'整天'}</b>${esc(e.title)}</div>`).join('') : '<div class="sub">點右下角 ＋ 新增行程</div>'}</div></div>
+    <div class="w big" data-go="calendar"><div class="lab">今日行程</div><div class="mini">${evs.length ? evs.slice(0,4).map(e=>`<div style="${e.done?'text-decoration:line-through;opacity:.5':''}"><span class="cdot" style="background:${colorOf(e).c};width:8px;height:8px;margin-right:6px"></span><b>${evDays(e)>1 ? `${dayDiff(e.date,t)+1}/${evDays(e)}天` : (e.time||'整天')}</b>${esc(e.title)}</div>`).join('') : '<div class="sub">點右下角 ＋ 新增行程</div>'}</div></div>
     <div class="w" data-go="money"><div class="lab">本月結餘</div><div class="num" style="color:${inc-out>=0?'var(--green)':'var(--red)'}">${money(inc-out)}</div><div class="small">收入 ${money(inc)}</div></div>
     <div class="w" data-go="notes"><div class="lab">記事</div><div class="mini">${notes.length ? notes.map(n=>`<div>${esc(n.title || (n.body||'').split('\n')[0] || '（空白）')}</div>`).join('') : '<div class="sub">還沒有記事</div>'}</div></div>
   </div>
   <h2>接下來</h2>
-  <div class="list">${upcoming.length ? upcoming.map(e=>eventRow(e,true)).join('') : '<div class="empty">沒有即將到來的行程</div>'}</div>
+  <div class="list">${upcoming.length ? upcoming.map(e=>eventRow(e)).join('') : '<div class="empty">沒有即將到來的行程</div>'}</div>
   <h2>資料備份</h2>
   <div class="card tip">
     資料只存在這支手機裡，完全離線可用。建議偶爾匯出備份，換手機或清除資料時才救得回來。<br>
@@ -323,26 +361,45 @@ function viewNotes(){
 function viewCalendar(){
   const m = S.calMonth, y = m.getFullYear(), mo = m.getMonth();
   const start = new Date(y, mo, 1 - m.getDay());
-  const evs = Store.all('event'), txs = Store.all('tx');
+  const evs = sortEvents(Store.all('event')), txs = Store.all('tx');
+  const txDays = new Set(txs.map(x=>x.date));
   const t = todayStr();
-  let cells = '';
-  for (let i=0;i<42;i++){
-    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate()+i), s = ymd(d);
-    const n = evs.filter(e=>e.date===s).length, hasTx = txs.some(x=>x.date===s);
-    cells += `<button class="day ${d.getMonth()!==mo?'other':''} ${s===t?'today':''} ${s===S.calSel?'sel':''}" data-day="${s}">${d.getDate()}
-      <span class="dots">${n?'<i></i>':''}${n>1?'<i></i>':''}${hasTx?'<i class="m"></i>':''}</span></button>`;
-    if (i===34 && new Date(start.getFullYear(), start.getMonth(), start.getDate()+35).getMonth()!==mo) break;
+  const weeks = Math.ceil((m.getDay() + new Date(y, mo+1, 0).getDate()) / 7);
+  const MAXL = 3;
+  let html = '';
+  for (let w=0; w<weeks; w++){
+    const days = [...Array(7)].map((_,i)=> new Date(start.getFullYear(), start.getMonth(), start.getDate()+w*7+i));
+    const s0 = ymd(days[0]), s6 = ymd(days[6]);
+    let cells = days.map((d,i)=>{ const s = ymd(d);
+      return `<button class="day ${d.getMonth()!==mo?'other':''} ${s===t?'today':''} ${s===S.calSel?'sel':''}" data-day="${s}" style="grid-column:${i+1}"><span class="n">${d.getDate()}</span>${txDays.has(s)?'<i class="mdot"></i>':''}</button>`;
+    }).join('');
+    // 把跨在這週的行程排進「車道」，連續天數畫成一條色條
+    const weekEvs = evs.filter(e => e.date <= s6 && evEnd(e) >= s0)
+      .sort((a,b)=> a.date.localeCompare(b.date) || evDays(b)-evDays(a) || (a.time||'').localeCompare(b.time||''));
+    const lanes = [], more = Array(7).fill(0);
+    weekEvs.forEach(e => {
+      const cs = Math.max(0, dayDiff(s0, e.date)), ce = Math.min(6, dayDiff(s0, evEnd(e)));
+      let l = 0;
+      while (l < MAXL && lanes[l] && lanes[l].some(c => c >= cs && c <= ce)) l++;
+      if (l >= MAXL){ for (let c=cs;c<=ce;c++) more[c]++; return; }
+      (lanes[l] = lanes[l] || []).push(...Array.from({length:ce-cs+1}, (_,k)=>cs+k));
+      const col = colorOf(e);
+      cells += `<div class="evbar ${e.date < s0 ? 'cl':''} ${evEnd(e) > s6 ? 'cr':''} ${e.done?'done':''}" style="grid-column:${cs+1}/${ce+2};grid-row:${l+2};background:${col.c}">${esc(e.title)}</div>`;
+    });
+    more.forEach((n,c)=>{ if (n) cells += `<div class="more" style="grid-column:${c+1}">+${n}</div>`; });
+    html += `<div class="week">${cells}</div>`;
   }
-  const dayEvs = sortEvents(evs.filter(e=>e.date===S.calSel));
+  const dayEvs = sortEvents(evs.filter(e=>covers(e, S.calSel)));
   const dayTx = txs.filter(x=>x.date===S.calSel);
-  return header('行事曆', '圓點：橘＝行程　藍＝有記帳') + `
-  <div class="card" style="margin-top:14px">
-    <div class="calhead"><button class="iconbtn" data-cal="-1">‹</button><b>${y} 年 ${mo+1} 月</b><button class="iconbtn" data-cal="1">›</button></div>
-    <div class="grid7">${WD.map(w=>`<div class="dow">${w}</div>`).join('')}${cells}</div>
+  return header('行事曆', '藍點＝當天有記帳') + `
+  <div class="card" style="margin-top:14px;padding:12px 8px">
+    <div class="calhead" style="padding:0 6px"><button class="iconbtn" data-cal="-1">‹</button><b>${y} 年 ${mo+1} 月</b><button class="iconbtn" data-cal="1">›</button></div>
+    <div class="grid7">${WD.map(w=>`<div class="dow">${w}</div>`).join('')}</div>${html}
+    <div class="legend" style="padding:0 6px">${COLORS.map(c=>`<span><i class="cdot" style="background:${c.c}"></i>${c.n}</span>`).join('')}</div>
     <div style="text-align:center;margin-top:8px"><button class="cats" style="border:none;background:none;color:var(--accent);font-size:14px;cursor:pointer" data-cal="0">回到今天</button></div>
   </div>
   <h2>${fmtDate(S.calSel)} 的行程</h2>
-  <div class="list">${dayEvs.length ? dayEvs.map(e=>eventRow(e,false)).join('') : '<div class="empty">這天沒有行程，點 ＋ 新增</div>'}</div>
+  <div class="list">${dayEvs.length ? dayEvs.map(e=>eventRow(e,S.calSel)).join('') : '<div class="empty">這天沒有行程，點 ＋ 新增</div>'}</div>
   ${dayTx.length ? `<h2>這天的收支</h2><div class="list">${dayTx.map(txRow).join('')}</div>` : ''}`;
 }
 
@@ -419,18 +476,36 @@ function editNote(id){
 }
 
 function editEvent(id){
-  const e0 = id ? Store.items[id] : {id:uid(), kind:'event', title:'', date:S.view==='calendar'?S.calSel:todayStr(), time:'', memo:'', done:false};
+  const e0 = id ? Store.items[id] : {id:uid(), kind:'event', title:'', date:S.view==='calendar'?S.calSel:todayStr(), end:'', time:'', memo:'', color:'orange', done:false};
+  let color = colorOf(e0).k;
   openSheet(`<h3>${id?'編輯行程':'新行程'}<button class="x" data-close>×</button></h3>
     <form id="f">
-    <div class="field"><label>要做什麼</label><input name="title" value="${esc(e0.title)}" placeholder="例如：牙醫、開會、繳電話費" required></div>
-    <div class="two"><div class="field"><label>日期</label><input type="date" name="date" value="${e0.date}" required></div>
-    <div class="field"><label>時間（可留空＝整天）</label><input type="time" name="time" value="${e0.time||''}"></div></div>
+    <div class="field"><label>要做什麼</label><input name="title" value="${esc(e0.title)}" placeholder="例如：旅行、考試週、開會" required></div>
+    <div class="two"><div class="field"><label>開始日期</label><input type="date" name="date" value="${e0.date}" required></div>
+    <div class="field"><label>結束日期</label><input type="date" name="end" value="${evEnd(e0)}" required></div></div>
+    <div class="sub" id="dayCount" style="margin:-4px 2px 12px"></div>
+    <div class="field"><label>時間（可留空＝整天）</label><input type="time" name="time" value="${e0.time||''}"></div>
+    <div class="field"><label>顏色分類</label><div class="swatches" id="sw"></div></div>
     <div class="field"><label>備註</label><input name="memo" value="${esc(e0.memo)}" placeholder="地點、要帶的東西…"></div>
     <div class="btns">${delBtn(id)}<button type="button" class="btn ghost" data-close>取消</button><button class="btn pri">儲存</button></div></form>`);
+  const f = $('#f');
+  const drawSw = () => { $('#sw').innerHTML = COLORS.map(c=>`<button type="button" class="${c.k===color?'on':''}" data-color="${c.k}"><i class="cdot" style="background:${c.c}"></i>${c.n}</button>`).join(''); };
+  const drawCount = () => {
+    const a = f.date.value, b = f.end.value;
+    $('#dayCount').textContent = (a && b && b >= a) ? (b === a ? '單日行程' : `連續 ${dayDiff(a,b)+1} 天`) : '';
+  };
+  drawSw(); drawCount();
+  $('#sw').onclick = e => { const b = e.target.closest('[data-color]'); if (b){ color = b.dataset.color; drawSw(); } };
+  // 改開始日期時，結束日期跟著移動，保持同樣天數
+  let span = dayDiff(e0.date, evEnd(e0));
+  f.date.onchange = () => { if (f.date.value){ const d = parseYmd(f.date.value); d.setDate(d.getDate()+span); f.end.value = ymd(d); } drawCount(); };
+  f.end.onchange = () => { if (f.end.value && f.date.value && f.end.value < f.date.value) f.end.value = f.date.value; span = dayDiff(f.date.value, f.end.value); drawCount(); };
   if (!id) setTimeout(()=>$('#f [name=title]')?.focus(), 50);
-  $('#f').onsubmit = ev => { ev.preventDefault(); const f = ev.target;
-    Store.put({...e0, title:f.title.value.trim(), date:f.date.value, time:f.time.value, memo:f.memo.value.trim()});
-    S.calSel = f.date.value; closeSheet(); toast('已儲存');
+  f.onsubmit = ev => { ev.preventDefault();
+    const date = f.date.value, end = f.end.value && f.end.value > date ? f.end.value : '';
+    Store.put({...e0, title:f.title.value.trim(), date, end, time:f.time.value, color, memo:f.memo.value.trim()});
+    S.calSel = date; const d = parseYmd(date); S.calMonth = new Date(d.getFullYear(), d.getMonth(), 1);
+    closeSheet(); toast('已儲存');
   };
 }
 

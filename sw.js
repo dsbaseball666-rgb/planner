@@ -1,6 +1,6 @@
-// 離線快取：第一次開啟時把整個 App 存到手機，之後沒網路也能開。
+﻿// 離線快取：第一次開啟時把整個 App 存到手機，之後沒網路也能開。
 // 修改 App 檔案後，把版本號 +1，手機下次連網時就會更新。
-const CACHE = 'my-planner-v1';
+const CACHE = 'my-planner-v2';
 const FILES = [
   './',
   './index.html',
